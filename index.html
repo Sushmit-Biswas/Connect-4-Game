@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect 4</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .game-container {
+            text-align: center;
+        }
+        .board {
+            display: inline-grid;
+            grid-template-columns: repeat(7, 60px);
+            grid-gap: 5px;
+            padding: 10px;
+            background-color: #0066cc;
+            border-radius: 10px;
+            position: relative;
+        }
+        .cell {
+            width: 60px;
+            height: 60px;
+            background-color: white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .chip {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            position: absolute;
+            transition: all 0.5s ease;
+        }
+        .chip.red {
+            background-color: red;
+        }
+        .chip.yellow {
+            background-color: yellow;
+        }
+        .chip.preview {
+            opacity: 0.5;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: 2px solid #0066cc;
+            background-color: white;
+            color: #0066cc;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+        button.active {
+            background-color: #0066cc;
+            color: white;
+        }
+        #resetButton {
+            display: none;
+            border-color: #cc0000;
+            color: #cc0000;
+        }
+        #resetButton.active {
+            background-color: #cc0000;
+            color: white;
+        }
+        
+        /* Add new CSS for loading animation */
+        .ai-thinking {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 20px;
+            display: none;
+            z-index: 100;
+        }
+
+        .ai-thinking.show {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .loading-dots {
+            display: inline-block;
+            position: relative;
+            width: 40px;
+            height: 20px;
+        }
+
+        .loading-dots div {
+            position: absolute;
+            top: 8px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fff;
+            animation-timing-function: cubic-bezier(0, 1, 1, 0);
+        }
+
+        .loading-dots div:nth-child(1) {
+            left: 4px;
+            animation: loading1 0.6s infinite;
+        }
+
+        .loading-dots div:nth-child(2) {
+            left: 4px;
+            animation: loading2 0.6s infinite;
+        }
+
+        .loading-dots div:nth-child(3) {
+            left: 16px;
+            animation: loading2 0.6s infinite;
+        }
+
+        .loading-dots div:nth-child(4) {
+            left: 28px;
+            animation: loading3 0.6s infinite;
+        }
+
+        @keyframes loading1 {
+            0% { transform: scale(0); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes loading2 {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(12px, 0); }
+        }
+
+        @keyframes loading3 {
+            0% { transform: scale(1); }
+            100% { transform: scale(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>Connect 4</h1>
+        <div>
+            <button id="humanVsHuman">Human vs Human</button>
+            <button id="humanVsAI">Human vs AI</button>
+            <button id="resetButton">Reset Game</button>
+        </div>
+        <div class="difficulty-controls" style="margin: 10px 0;">
+            <button id="easyAI" class="active">Easy</button>
+            <button id="mediumAI">Medium</button>
+            <button id="hardAI">Hard</button>
+        </div>
+        <div id="board" class="board"></div>
+        <p id="status"></p>
+    </div>
+    <div class="ai-thinking">
+        AI Thinking<div class="loading-dots">
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+        </div>
+    </div>
+    <script>
+        const ROWS = 6;
+        const COLS = 7;
+        const EMPTY = 0;
+        const RED = 1;
+        const YELLOW = 2;
+        const CELL_SIZE = 60;
+        const CHIP_SIZE = 50;
+        const BOARD_PADDING = 10;
+
+        let currentPlayer = RED;
+        let board = [];
+        let gameMode = 'humanVsAI';  // Changed default game mode
+        let gameActive = true;
+        let isAITurn = false;
+        let aiDifficulty = 'easy';  // Add this line
+
+        const boardElement = document.getElementById('board');
+        const statusElement = document.getElementById('status');
+        const resetButton = document.getElementById('resetButton');
+        const humanVsHumanButton = document.getElementById('humanVsHuman');
+        const humanVsAIButton = document.getElementById('humanVsAI');
+
+        let previewChip = null;
+
+        function initializeBoard() {
+            board = Array(ROWS).fill().map(() => Array(COLS).fill(EMPTY));
+            boardElement.innerHTML = '';
+            for (let row = 0; row < ROWS; row++) {
+                for (let col = 0; col < COLS; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+                    boardElement.appendChild(cell);
+                }
+            }
+            currentPlayer = RED;
+            gameActive = true;
+            isAITurn = false;
+            resetButton.style.display = 'none';
+            updateStatus();
+            updateModeButtons();
+        }
+
+        function updateStatus() {
+            statusElement.textContent = gameActive 
+                ? `Current player: ${currentPlayer === RED ? 'Red' : 'Yellow'}`
+                : `Game Over. ${currentPlayer === RED ? 'Red' : 'Yellow'} wins!`;
+        }
+
+        function updateModeButtons() {
+            humanVsHumanButton.classList.toggle('active', gameMode === 'humanVsHuman');
+            humanVsAIButton.classList.toggle('active', gameMode === 'humanVsAI');
+        }
+
+        function dropChip(col) {
+            if (!gameActive || (isAITurn && gameMode === 'humanVsAI')) return false;
+            
+            for (let row = ROWS - 1; row >= 0; row--) {
+                if (board[row][col] === EMPTY) {
+                    board[row][col] = currentPlayer;
+                    animateChipDrop(row, col);
+                    
+                    if (checkWin(row, col)) {
+                        gameActive = false;
+                        updateStatus();
+                        resetButton.style.display = 'inline-block';
+                    } else if (checkDraw()) {
+                        statusElement.textContent = "It's a draw!";
+                        gameActive = false;
+                        resetButton.style.display = 'inline-block';
+                    } else {
+                        currentPlayer = currentPlayer === RED ? YELLOW : RED;
+                        updateStatus();
+                        
+                        if (gameMode === 'humanVsAI' && currentPlayer === YELLOW && gameActive) {
+                            isAITurn = true;
+                            removePreviewChip();
+                            setTimeout(makeAIMove, 500);
+                        }
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function animateChipDrop(row, col) {
+            const chip = document.createElement('div');
+            chip.className = `chip ${currentPlayer === RED ? 'red' : 'yellow'}`;
+            const leftPosition = col * (CELL_SIZE + 5) + BOARD_PADDING + (CELL_SIZE - CHIP_SIZE) / 2;
+            chip.style.left = `${leftPosition}px`;
+            chip.style.top = `${BOARD_PADDING + (CELL_SIZE - CHIP_SIZE) / 2}px`;
+            boardElement.appendChild(chip);
+            
+            setTimeout(() => {
+                chip.style.transform = `translateY(${row * (CELL_SIZE + 5)}px)`;
+            }, 50);
+        }
+
+        function showPreviewChip(col) {
+            if (!gameActive || isAITurn) return;
+            if (previewChip) {
+                boardElement.removeChild(previewChip);
+            }
+            previewChip = document.createElement('div');
+            previewChip.className = `chip ${currentPlayer === RED ? 'red' : 'yellow'} preview`;
+            const leftPosition = col * (CELL_SIZE + 5) + BOARD_PADDING + (CELL_SIZE - CHIP_SIZE) / 2;
+            previewChip.style.left = `${leftPosition}px`;
+            previewChip.style.top = `${BOARD_PADDING + (CELL_SIZE - CHIP_SIZE) / 2}px`;
+            boardElement.appendChild(previewChip);
+        }
+
+        function removePreviewChip() {
+            if (previewChip) {
+                boardElement.removeChild(previewChip);
+                previewChip = null;
+            }
+        }
+
+        function checkWin(row, col) {
+            const directions = [
+                [0, 1], [1, 0], [1, 1], [1, -1]
+            ];
+            for (const [dx, dy] of directions) {
+                let count = 1;
+                count += countDirection(row, col, dx, dy);
+                count += countDirection(row, col, -dx, -dy);
+                if (count >= 4) return true;
+            }
+            return false;
+        }
+
+        function countDirection(row, col, dx, dy) {
+            let count = 0;
+            let r = row + dx;
+            let c = col + dy;
+            while (r >= 0 && r < ROWS && c >= 0 && c < COLS && board[r][c] === currentPlayer) {
+                count++;
+                r += dx;
+                c += dy;
+            }
+            return count;
+        }
+
+        function checkDraw() {
+            return board[0].every(cell => cell !== EMPTY);
+        }
+
+        const aiThinkingElement = document.querySelector('.ai-thinking');
+
+        function showAIThinking() {
+            return new Promise((resolve) => {
+                if (aiDifficulty === 'hard') {
+                    aiThinkingElement.classList.add('show');
+                    // Simulate longer thinking time for hard mode
+                    setTimeout(() => {
+                        aiThinkingElement.classList.remove('show');
+                        resolve();
+                    }, 1500);
+                } else {
+                    resolve();
+                }
+            });
+        }
+
+        function makeAIMove() {
+            if (!gameActive || currentPlayer !== YELLOW) return;
+            
+            showAIThinking()
+                .then(() => {
+                    let col = decideBestMove();
+                    if (col === -1 || !canPlay(col)) {
+                        col = decideEasyMove();
+                    }
+
+                    const row = findLowestEmptyRow(col);
+                    if (row !== -1) {
+                        board[row][col] = YELLOW;
+                        animateChipDrop(row, col);
+
+                        if (checkWin(row, col)) {
+                            gameActive = false;
+                            updateStatus();
+                            resetButton.style.display = 'inline-block';
+                        } else if (checkDraw()) {
+                            statusElement.textContent = "It's a draw!";
+                            gameActive = false;
+                            resetButton.style.display = 'inline-block';
+                        } else {
+                            currentPlayer = RED;
+                            isAITurn = false;
+                            updateStatus();
+                        }
+                    }
+                });
+        }
+
+        function findLowestEmptyRow(col) {
+            for (let row = ROWS - 1; row >= 0; row--) {
+                if (board[row][col] === EMPTY) {
+                    return row;
+                }
+            }
+            return -1;
+        }
+
+        function decideBestMove() {
+            switch (aiDifficulty) {
+                case 'easy':
+                    return decideEasyMove();
+                case 'medium':
+                    // Reduced depth for medium difficulty
+                    return minimax(board, 4, -Infinity, Infinity, true).column;
+                case 'hard':
+                    // Increased depth and using enhanced evaluation for hard difficulty
+                    return minimax(board, 8, -Infinity, Infinity, true).column;
+                default:
+                    return decideEasyMove();
+            }
+        }
+
+        function decideEasyMove() {
+            const availableCols = [];
+            for (let col = 0; col < COLS; col++) {
+                if (canPlay(col)) {
+                    availableCols.push(col);
+                }
+            }
+            if (availableCols.length === 0) return -1;
+            return availableCols[Math.floor(Math.random() * availableCols.length)];
+        }
+
+        function decideMediumMove() {
+            // Check for winning move
+            for (let col = 0; col < COLS; col++) {
+                if (canPlay(col) && isWinningMove(col, YELLOW)) {
+                    return col;
+                }
+            }
+
+            // Block opponent's winning move
+            for (let col = 0; col < COLS; col++) {
+                if (canPlay(col) && isWinningMove(col, RED)) {
+                    return col;
+                }
+            }
+
+            // Use minimax with limited depth
+            return minimax(board, 3, -Infinity, Infinity, true).column;
+        }
+
+        function minimax(board, depth, alpha, beta, maximizingPlayer) {
+            const availableMoves = getAvailableMoves(board);
+            
+            // Base cases
+            if (depth === 0 || availableMoves.length === 0 || isTerminalNode(board)) {
+                return {
+                    column: null,
+                    score: evaluatePosition(board)
+                };
+            }
+
+            if (maximizingPlayer) {
+                let value = -Infinity;
+                let column = availableMoves[0];
+                
+                for (let col of availableMoves) {
+                    const tempBoard = board.map(row => [...row]);
+                    dropPiece(tempBoard, col, YELLOW);
+                    const newScore = minimax(tempBoard, depth - 1, alpha, beta, false).score;
+                    
+                    if (newScore > value) {
+                        value = newScore;
+                        column = col;
+                    }
+                    alpha = Math.max(alpha, value);
+                    if (alpha >= beta) break;
+                }
+                
+                return { column, score: value };
+            } else {
+                let value = Infinity;
+                let column = availableMoves[0];
+                
+                for (let col of availableMoves) {
+                    const tempBoard = board.map(row => [...row]);
+                    dropPiece(tempBoard, col, RED);
+                    const newScore = minimax(tempBoard, depth - 1, alpha, beta, true).score;
+                    
+                    if (newScore < value) {
+                        value = newScore;
+                        column = col;
+                    }
+                    beta = Math.min(beta, value);
+                    if (alpha >= beta) break;
+                }
+                
+                return { column, score: value };
+            }
+        }
+
+        function getAvailableMoves(board) {
+            const moves = [];
+            for (let col = 0; col < COLS; col++) {
+                if (board[0][col] === EMPTY) {
+                    moves.push(col);
+                }
+            }
+            return moves;
+        }
+
+        function dropPiece(board, col, player) {
+            for (let row = ROWS - 1; row >= 0; row--) {
+                if (board[row][col] === EMPTY) {
+                    board[row][col] = player;
+                    return row;
+                }
+            }
+            return -1;
+        }
+
+        function isTerminalNode(board) {
+            // Check for wins
+            for (let row = 0; row < ROWS; row++) {
+                for (let col = 0; col < COLS; col++) {
+                    if (board[row][col] !== EMPTY) {
+                        if (checkWinForAI(board, row, col, board[row][col])) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Check for full board
+            return board[0].every(cell => cell !== EMPTY);
+        }
+
+        function evaluatePosition(board) {
+            let score = 0;
+            
+            // Evaluate center column (weighted more heavily)
+            const centerCol = Math.floor(COLS / 2);
+            const centerCount = board.filter(row => row[centerCol] === YELLOW).length;
+            score += centerCount * 4; // Increased center control weight
+
+            // Evaluate patterns
+            score += evaluateLines(board);
+            score += evaluateLines(transposeBoard(board));
+            score += evaluateDiagonals(board);
+
+            // Add position-based weighting
+            score += evaluatePositionalAdvantage(board);
+
+            return score;
+        }
+
+        function evaluateLines(board) {
+            let score = 0;
+            for (let row = 0; row < board.length; row++) {
+                for (let col = 0; col < board[0].length - 3; col++) {
+                    const window = board[row].slice(col, col + 4);
+                    score += evaluateWindow(window);
+                }
+            }
+            return score;
+        }
+
+        function transposeBoard(board) {
+            return board[0].map((_, i) => board.map(row => row[i]));
+        }
+
+        function evaluateDiagonals(board) {
+            let score = 0;
+            // Evaluate diagonals
+            for (let row = 0; row < ROWS - 3; row++) {
+                for (let col = 0; col < COLS - 3; col++) {
+                    let window = [];
+                    for (let i = 0; i < 4; i++) {
+                        window.push(board[row + i][col + i]);
+                    }
+                    score += evaluateWindow(window);
+                }
+            }
+            
+            // Evaluate anti-diagonals
+            for (let row = 0; row < ROWS - 3; row++) {
+                for (let col = 3; col < COLS; col++) {
+                    let window = [];
+                    for (let i = 0; i < 4; i++) {
+                        window.push(board[row + i][col - i]);
+                    }
+                    score += evaluateWindow(window);
+                }
+            }
+            return score;
+        }
+
+        function evaluateWindow(window) {
+            const yellowCount = window.filter(cell => cell === YELLOW).length;
+            const redCount = window.filter(cell => cell === RED).length;
+            const emptyCount = window.filter(cell => cell === EMPTY).length;
+
+            // Enhanced scoring system
+            if (yellowCount === 4) return 100;
+            if (redCount === 4) return -100;
+            
+            // Adjusted weights for better AI behavior
+            if (yellowCount === 3 && emptyCount === 1) return 15;
+            if (yellowCount === 2 && emptyCount === 2) return 5;
+            if (redCount === 3 && emptyCount === 1) return -12;
+            if (redCount === 2 && emptyCount === 2) return -4;
+            
+            return yellowCount - redCount; // Base score for piece advantage
+        }
+
+        function evaluatePositionalAdvantage(board) {
+            let score = 0;
+            // Prefer lower positions (more stable)
+            for (let row = 0; row < ROWS; row++) {
+                for (let col = 0; col < COLS; col++) {
+                    if (board[row][col] === YELLOW) {
+                        score += (ROWS - row) * 0.5; // Higher weight for lower positions
+                    } else if (board[row][col] === RED) {
+                        score -= (ROWS - row) * 0.5;
+                    }
+                }
+            }
+            return score;
+        }
+
+        function canPlay(col) {
+            return col >= 0 && col < COLS && board[0][col] === EMPTY;
+        }
+
+        function checkWinForAI(board, row, col, player) {
+            // Check horizontal
+            let count = 0;
+            for (let c = 0; c < COLS; c++) {
+                if (board[row][c] === player) {
+                    count++;
+                    if (count === 4) return true;
+                } else {
+                    count = 0;
+                }
+            }
+
+            // Check vertical
+            count = 0;
+            for (let r = 0; r < ROWS; r++) {
+                if (board[r][col] === player) {
+                    count++;
+                    if (count === 4) return true;
+                } else {
+                    count = 0;
+                }
+            }
+
+            // Check diagonal
+            for (let r = 0; r < ROWS - 3; r++) {
+                for (let c = 0; c < COLS - 3; c++) {
+                    if (board[r][c] === player &&
+                        board[r + 1][c + 1] === player &&
+                        board[r + 2][c + 2] === player &&
+                        board[r + 3][c + 3] === player) {
+                        return true;
+                    }
+                }
+            }
+
+            // Check anti-diagonal
+            for (let r = 3; r < ROWS; r++) {
+                for (let c = 0; c < COLS - 3; c++) {
+                    if (board[r][c] === player &&
+                        board[r - 1][c + 1] === player &&
+                        board[r - 2][c + 2] === player &&
+                        board[r - 3][c + 3] === player) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        function isWinningMove(col, player) {
+            // Create a temporary board copy
+            const tempBoard = board.map(row => [...row]);
+            
+            // Find the row where the piece would land
+            let row = -1;
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (tempBoard[r][col] === EMPTY) {
+                    row = r;
+                    break;
+                }
+            }
+            
+            if (row === -1) return false;
+            
+            // Place the piece and check for win
+            tempBoard[row][col] = player;
+            return checkWinForAI(tempBoard, row, col, player);
+        }
+
+        // Add event listeners for difficulty buttons
+        document.getElementById('easyAI').addEventListener('click', () => setAIDifficulty('easy'));
+        document.getElementById('mediumAI').addEventListener('click', () => setAIDifficulty('medium'));
+        document.getElementById('hardAI').addEventListener('click', () => setAIDifficulty('hard'));
+
+        function setAIDifficulty(difficulty) {
+            aiDifficulty = difficulty;
+            document.querySelectorAll('.difficulty-controls button').forEach(btn => {
+                btn.classList.toggle('active', btn.id === `${difficulty}AI`);
+            });
+            if (gameMode === 'humanVsAI') {
+                initializeBoard();
+            }
+        }
+
+        boardElement.addEventListener('mousemove', (e) => {
+            if (!gameActive || isAITurn) return;
+            const rect = boardElement.getBoundingClientRect();
+            const col = Math.floor((e.clientX - rect.left - BOARD_PADDING) / (CELL_SIZE + 5));
+            if (col >= 0 && col < COLS) {
+                showPreviewChip(col);
+            } else {
+                removePreviewChip();
+            }
+        });
+
+        boardElement.addEventListener('mouseleave', removePreviewChip);
+
+        boardElement.addEventListener('click', (e) => {
+            if (!gameActive || isAITurn) return;
+            const rect = boardElement.getBoundingClientRect();
+            const col = Math.floor((e.clientX - rect.left - BOARD_PADDING) / (CELL_SIZE + 5));
+            if (col >= 0 && col < COLS) {
+                removePreviewChip();
+                dropChip(col);
+            }
+        });
+
+        humanVsHumanButton.addEventListener('click', () => {
+            gameMode = 'humanVsHuman';
+            initializeBoard();
+        });
+
+        humanVsAIButton.addEventListener('click', () => {
+            gameMode = 'humanVsAI';
+            initializeBoard();
+        });
+
+        resetButton.addEventListener('click', initializeBoard);
+
+        initializeBoard();
+    </script>
+</body>
+</html>
